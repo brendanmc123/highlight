@@ -1,6 +1,7 @@
-import { motion } from 'framer-motion'
-import { useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
 function PlaceholderIcon() {
   return (
@@ -43,9 +44,26 @@ function MicIcon({ className = '' }: { className?: string }) {
   )
 }
 
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+const RING_DELAYS = [0, 0.35, 0.7]
+
 export function RecordingScreen() {
   const [isTyping, setIsTyping] = useState(false)
   const [typedEntry, setTypedEntry] = useState('')
+  const [isConfirmed, setIsConfirmed] = useState(false)
+
+  const previousListeningRef = useRef(false)
+  const lastLoggedTranscriptRef = useRef('')
+  const confirmTimeoutRef = useRef<number | null>(null)
+
+  const { isAvailable, isListening, transcript, startListening, stopListening, error } = useSpeechRecognition()
 
   const todayLabel = useMemo(() => {
     return new Intl.DateTimeFormat('en-GB', {
@@ -54,6 +72,59 @@ export function RecordingScreen() {
       month: 'long',
     }).format(new Date())
   }, [])
+
+  const permissionDenied = error === 'permission-denied'
+  const canUseMic = isAvailable && !permissionDenied
+  const showTypingInput = !canUseMic || isTyping
+
+  const triggerConfirmedState = () => {
+    setIsConfirmed(true)
+
+    if (confirmTimeoutRef.current !== null) {
+      window.clearTimeout(confirmTimeoutRef.current)
+    }
+
+    confirmTimeoutRef.current = window.setTimeout(() => {
+      setIsConfirmed(false)
+      confirmTimeoutRef.current = null
+    }, 600)
+  }
+
+  useEffect(() => {
+    if (previousListeningRef.current && !isListening) {
+      const spokenEntry = transcript.trim()
+
+      if (spokenEntry && spokenEntry !== lastLoggedTranscriptRef.current) {
+        console.log(spokenEntry)
+        lastLoggedTranscriptRef.current = spokenEntry
+        triggerConfirmedState()
+      }
+    }
+
+    previousListeningRef.current = isListening
+  }, [isListening, transcript])
+
+  useEffect(() => {
+    return () => {
+      if (confirmTimeoutRef.current !== null) {
+        window.clearTimeout(confirmTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const handleMicTap = () => {
+    if (!canUseMic) {
+      setIsTyping(true)
+      return
+    }
+
+    if (isListening) {
+      stopListening()
+      return
+    }
+
+    startListening()
+  }
 
   const handleTypedSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -65,7 +136,11 @@ export function RecordingScreen() {
 
     console.log(value)
     setTypedEntry('')
+    triggerConfirmedState()
   }
+
+  const micBackground = isListening ? '#2563EB' : isConfirmed ? '#10B981' : '#E5E7EB'
+  const micForeground = isListening || isConfirmed ? '#FFFFFF' : '#6B7280'
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-[420px] bg-[#FAFAF8] px-4 text-[#1A1A1A]">
@@ -93,20 +168,50 @@ export function RecordingScreen() {
         <p className="mt-2 text-center text-sm font-medium text-[#6B7280]">{todayLabel}</p>
 
         <section className="flex flex-1 flex-col items-center justify-center pb-12 pt-10">
-          <motion.button
-            type="button"
-            whileTap={{ scale: 0.95 }}
-            transition={{ type: 'spring', stiffness: 450, damping: 20, mass: 0.7 }}
-            onClick={() => console.log('mic tapped')}
-            aria-label="Start voice recording"
-            className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-[#E5E7EB] text-[#6B7280] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
-          >
-            <MicIcon />
-          </motion.button>
+          {canUseMic && (
+            <div className="relative flex h-[172px] w-full items-center justify-center">
+              <AnimatePresence>
+                {isListening &&
+                  RING_DELAYS.map((delay) => (
+                    <motion.span
+                      key={delay}
+                      initial={{ scale: 1, opacity: 0 }}
+                      animate={{ scale: [1, 1.8], opacity: [0.28, 0] }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 1.5, ease: 'easeOut', delay, repeat: Number.POSITIVE_INFINITY }}
+                      className="pointer-events-none absolute h-[76px] w-[76px] rounded-full border border-[#2563EB]"
+                    />
+                  ))}
+              </AnimatePresence>
 
-          <div className="mt-12 min-h-[120px] w-full" aria-label="Transcription area" />
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.95 }}
+                animate={isConfirmed ? { scale: [1, 1.05, 1] } : { scale: 1 }}
+                transition={
+                  isConfirmed
+                    ? { duration: 0.6, ease: 'easeInOut' }
+                    : { type: 'spring', stiffness: 450, damping: 20, mass: 0.7 }
+                }
+                onClick={handleMicTap}
+                aria-label={isListening ? 'Stop voice recording' : 'Start voice recording'}
+                className="relative z-10 flex h-[76px] w-[76px] items-center justify-center rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
+                style={{ backgroundColor: micBackground, color: micForeground }}
+              >
+                {isConfirmed ? <CheckIcon /> : <MicIcon />}
+              </motion.button>
+            </div>
+          )}
 
-          {!isTyping ? (
+          {permissionDenied && (
+            <p className="mb-3 text-center text-sm text-[#6B7280]">Microphone access needed for voice input</p>
+          )}
+
+          <div className="mt-4 min-h-[120px] w-full px-4" aria-label="Transcription area">
+            <p className="text-center font-serif text-[18px] leading-relaxed text-[#1A1A1A]">{transcript}</p>
+          </div>
+
+          {canUseMic && !showTypingInput && (
             <button
               type="button"
               onClick={() => setIsTyping(true)}
@@ -114,7 +219,9 @@ export function RecordingScreen() {
             >
               Type instead
             </button>
-          ) : (
+          )}
+
+          {showTypingInput && (
             <form onSubmit={handleTypedSubmit} className="mt-1 w-full">
               <div className="relative rounded-2xl bg-white p-2 shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
                 <input
@@ -124,16 +231,26 @@ export function RecordingScreen() {
                   placeholder="What's your highlight today?"
                   className="h-12 w-full rounded-xl bg-transparent px-3 pr-14 font-serif text-[18px] text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF]"
                 />
-                <button
-                  type="button"
-                  onClick={() => setIsTyping(false)}
-                  aria-label="Switch back to mic mode"
-                  className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-[#6B7280]"
-                >
-                  <MicIcon className="h-5 w-5" />
-                </button>
+                {canUseMic && (
+                  <button
+                    type="button"
+                    onClick={() => setIsTyping(false)}
+                    aria-label="Switch back to mic mode"
+                    className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-[#6B7280]"
+                  >
+                    <MicIcon className="h-5 w-5" />
+                  </button>
+                )}
               </div>
             </form>
+          )}
+
+          {error && error !== 'permission-denied' && error !== 'unknown' && (
+            <p className="mt-3 text-center text-sm text-[#6B7280]">
+              {error === 'no-speech' && 'No speech detected. Try again or type instead.'}
+              {error === 'network' && 'Voice service unavailable right now. Try again or type instead.'}
+              {error === 'audio-capture' && 'No microphone detected. You can type your highlight instead.'}
+            </p>
           )}
         </section>
       </div>
