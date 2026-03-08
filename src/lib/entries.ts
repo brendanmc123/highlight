@@ -1,4 +1,4 @@
-import { db, type Entry, type EntryInputMethod } from './db'
+import { db, ensureDBReady, type Entry, type EntryInputMethod } from './db'
 
 function getTodayDateKey() {
   const now = new Date()
@@ -19,6 +19,8 @@ export async function saveEntry(text: string, inputMethod: EntryInputMethod): Pr
   if (!trimmedText) {
     return null
   }
+
+  await ensureDBReady()
 
   const today = getTodayDateKey()
   const existingEntry = await db.entries.where('date').equals(today).and((entry) => !entry.isSeed).first()
@@ -51,15 +53,18 @@ export async function saveEntry(text: string, inputMethod: EntryInputMethod): Pr
 }
 
 export async function getAllEntries() {
+  await ensureDBReady()
   const entries = await db.entries.toArray()
   return sortNewestFirst(entries.filter((entry) => !entry.isSeed))
 }
 
 export async function getEntryByDate(date: string) {
+  await ensureDBReady()
   return db.entries.where('date').equals(date).and((entry) => !entry.isSeed).first()
 }
 
 export async function getEntriesForOnThisDay(today: string) {
+  await ensureDBReady()
   const [year, month, day] = today.split('-')
   const entries = await db.entries.toArray()
 
@@ -76,11 +81,13 @@ export async function getEntriesForOnThisDay(today: string) {
 }
 
 export async function getEntryCount() {
+  await ensureDBReady()
   const entries = await db.entries.toArray()
   return entries.filter((entry) => !entry.isSeed).length
 }
 
 export async function getAllEntriesIncludingSeeds() {
+  await ensureDBReady()
   const entries = await db.entries.toArray()
   return sortNewestFirst(entries)
 }

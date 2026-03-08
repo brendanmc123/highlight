@@ -21,9 +21,17 @@ class HighlightDB extends Dexie {
     super('HighlightDB')
 
     this.version(1).stores({
-      entries: '&id,date',
+      entries: '&id,date,isSeed,createdAt,inputMethod',
     })
   }
 }
 
 export const db = new HighlightDB()
+
+export async function ensureDBReady() {
+  if (!db.isOpen()) {
+    await db.open()
+  }
+
+  return db
+}

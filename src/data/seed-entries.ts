@@ -1,4 +1,4 @@
-import { db, type Entry } from '../lib/db'
+import { db, ensureDBReady, type Entry } from '../lib/db'
 
 type SeedEntry = Pick<Entry, 'date' | 'text' | 'inputMethod' | 'isSeed' | 'seedAuthor' | 'seedYear' | 'seedNote'>
 
@@ -16,18 +16,20 @@ const seedEntries: SeedEntry[] = [
 ]
 
 export async function initializeSeedEntries() {
-  const existingSeed = await db.entries.filter((entry) => entry.isSeed).first()
+  await ensureDBReady()
 
-  if (existingSeed) {
+  const existingSeedCount = await db.entries.filter((entry) => entry.isSeed).count()
+
+  if (existingSeedCount > 0) {
     return
   }
 
   const createdAt = new Date().toISOString()
   const rows = seedEntries.map((entry) => ({
     ...entry,
-    id: window.crypto?.randomUUID?.() ?? `${entry.date}-${Math.random().toString(36).slice(2)}`,
+    id: `seed-${entry.date}-${(entry.seedAuthor ?? 'unknown').toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}`,
     createdAt,
   }))
 
-  await db.entries.bulkAdd(rows)
+  await db.entries.bulkPut(rows)
 }
