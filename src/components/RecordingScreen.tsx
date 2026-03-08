@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
+import { saveEntry } from '../lib/entries'
 
 function PlaceholderIcon() {
   return (
@@ -60,7 +61,6 @@ export function RecordingScreen() {
   const [isConfirmed, setIsConfirmed] = useState(false)
 
   const previousListeningRef = useRef(false)
-  const lastLoggedTranscriptRef = useRef('')
   const confirmTimeoutRef = useRef<number | null>(null)
 
   const { isAvailable, isListening, transcript, startListening, stopListening, error } = useSpeechRecognition()
@@ -90,14 +90,33 @@ export function RecordingScreen() {
     }, 600)
   }
 
+  const persistEntry = async (text: string) => {
+    const trimmedText = text.trim()
+
+    if (!trimmedText) {
+      return
+    }
+
+    try {
+      const savedEntry = await saveEntry(trimmedText)
+
+      if (!savedEntry) {
+        return
+      }
+
+      console.log(savedEntry.text)
+      triggerConfirmedState()
+    } catch {
+      console.error('Failed to save entry')
+    }
+  }
+
   useEffect(() => {
     if (previousListeningRef.current && !isListening) {
       const spokenEntry = transcript.trim()
 
-      if (spokenEntry && spokenEntry !== lastLoggedTranscriptRef.current) {
-        console.log(spokenEntry)
-        lastLoggedTranscriptRef.current = spokenEntry
-        triggerConfirmedState()
+      if (spokenEntry) {
+        void persistEntry(spokenEntry)
       }
     }
 
@@ -134,9 +153,8 @@ export function RecordingScreen() {
       return
     }
 
-    console.log(value)
     setTypedEntry('')
-    triggerConfirmedState()
+    void persistEntry(value)
   }
 
   const micBackground = isListening ? '#2563EB' : isConfirmed ? '#10B981' : '#E5E7EB'
