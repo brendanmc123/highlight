@@ -59,6 +59,7 @@ export function RecordingScreen() {
   const [isTyping, setIsTyping] = useState(false)
   const [typedEntry, setTypedEntry] = useState('')
   const [isConfirmed, setIsConfirmed] = useState(false)
+  const [displayedTranscript, setDisplayedTranscript] = useState('')
 
   const previousListeningRef = useRef(false)
   const confirmTimeoutRef = useRef<number | null>(null)
@@ -86,11 +87,12 @@ export function RecordingScreen() {
 
     confirmTimeoutRef.current = window.setTimeout(() => {
       setIsConfirmed(false)
+      setDisplayedTranscript('')
       confirmTimeoutRef.current = null
     }, 600)
   }
 
-  const persistEntry = async (text: string) => {
+  const persistEntry = async (text: string, inputMethod: 'voice' | 'text') => {
     const trimmedText = text.trim()
 
     if (!trimmedText) {
@@ -98,7 +100,7 @@ export function RecordingScreen() {
     }
 
     try {
-      const savedEntry = await saveEntry(trimmedText)
+      const savedEntry = await saveEntry(trimmedText, inputMethod)
 
       if (!savedEntry) {
         return
@@ -112,11 +114,15 @@ export function RecordingScreen() {
   }
 
   useEffect(() => {
+    setDisplayedTranscript(transcript)
+  }, [transcript])
+
+  useEffect(() => {
     if (previousListeningRef.current && !isListening) {
       const spokenEntry = transcript.trim()
 
       if (spokenEntry) {
-        void persistEntry(spokenEntry)
+        void persistEntry(spokenEntry, 'voice')
       }
     }
 
@@ -154,7 +160,7 @@ export function RecordingScreen() {
     }
 
     setTypedEntry('')
-    void persistEntry(value)
+    void persistEntry(value, 'text')
   }
 
   const micBackground = isListening ? '#2563EB' : isConfirmed ? '#10B981' : '#E5E7EB'
@@ -226,7 +232,7 @@ export function RecordingScreen() {
           )}
 
           <div className="mt-4 min-h-[120px] w-full px-4" aria-label="Transcription area">
-            <p className="text-center font-serif text-[18px] leading-relaxed text-[#1A1A1A]">{transcript}</p>
+            <p className="text-center font-serif text-[18px] leading-relaxed text-[#1A1A1A]">{displayedTranscript}</p>
           </div>
 
           {canUseMic && !showTypingInput && (
